@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fluxo de Caixa</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --text: #1d2330; --muted: #6b7280; --border: #e3e6eb;
+    --in: #15803d; --in-bg: #dcfce7; --out: #b91c1c; --out-bg: #fee2e2;
+    --accent: #2563eb; --pend: #a16207; --pend-bg: #fef3c7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --card: #1b2029; --text: #e6e8ec; --muted: #9aa3b2; --border: #2b3240;
+      --in: #4ade80; --in-bg: #14361f; --out: #f87171; --out-bg: #3d1717;
+      --accent: #60a5fa; --pend: #fbbf24; --pend-bg: #3b2f0b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; justify-content: space-between; margin-bottom: 16px; }
+  h1 { font-size: 22px; margin: 0; }
+  h2 { font-size: 16px; margin: 0 0 12px; }
+  .month-nav { display: flex; align-items: center; gap: 8px; }
+  .month-nav strong { min-width: 150px; text-align: center; }
+  button, input, select { font: inherit; color: inherit; }
+  button { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.link { border: none; background: none; padding: 4px 6px; color: var(--muted); }
+  button.link:hover { color: var(--accent); }
+  input, select { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; width: 100%; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .kpi { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+  .kpi span { display: block; font-size: 13px; color: var(--muted); }
+  .kpi b { display: block; font-size: 21px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .kpi small { color: var(--muted); font-size: 12px; }
+  .pos { color: var(--in); } .neg { color: var(--out); }
+  form.entry { display: grid; grid-template-columns: 130px 1fr 160px 120px 130px 120px auto; gap: 8px; align-items: end; }
+  form.entry label { font-size: 12px; color: var(--muted); display: block; }
+  @media (max-width: 900px) { form.entry { grid-template-columns: 1fr 1fr; } form.entry .full { grid-column: 1 / -1; } }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { font-size: 12px; color: var(--muted); font-weight: 600; }
+  td.num, th.num { text-align: right; }
+  td.desc { white-space: normal; min-width: 160px; }
+  tr.pending td { opacity: .75; }
+  .tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 99px; }
+  .tag.in { background: var(--in-bg); color: var(--in); }
+  .tag.out { background: var(--out-bg); color: var(--out); }
+  .tag.pend { background: var(--pend-bg); color: var(--pend); cursor: pointer; }
+  .tag.ok { background: transparent; color: var(--muted); border: 1px solid var(--border); cursor: pointer; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
+  .bar-row { display: grid; grid-template-columns: 120px 1fr 100px; gap: 8px; align-items: center; margin: 6px 0; font-size: 13px; }
+  .bar { height: 10px; border-radius: 5px; background: var(--border); overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 5px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  canvas { width: 100%; height: 260px; display: block; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .filters select, .filters input { width: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Fluxo de Caixa</h1>
+    <div class="month-nav">
+      <button id="prev" aria-label="Mês anterior">‹</button>
+      <strong id="monthLabel"></strong>
+      <button id="next" aria-label="Próximo mês">›</button>
+      <button id="today">Hoje</button>
+    </div>
+  </header>
+
+  <div class="kpis">
+    <div class="kpi"><span>Saldo inicial do mês</span><b id="kOpen"></b><small>realizado até o mês anterior</small></div>
+    <div class="kpi"><span>Entradas</span><b id="kIn" class="pos"></b><small id="kInPend"></small></div>
+    <div class="kpi"><span>Saídas</span><b id="kOut" class="neg"></b><small id="kOutPend"></small></div>
+    <div class="kpi"><span>Saldo atual (realizado)</span><b id="kReal"></b><small>só lançamentos pagos/recebidos</small></div>
+    <div class="kpi"><span>Saldo previsto no fim do mês</span><b id="kForecast"></b><small>inclui pendentes</small></div>
+  </div>
+
+  <div class="card">
+    <h2 id="formTitle">Novo lançamento</h2>
+    <form class="entry" id="form">
+      <div><label>Data</label><input type="date" id="fDate" required></div>
+      <div class="full"><label>Descrição</label><input id="fDesc" placeholder="Ex.: Aluguel" required></div>
+      <div><label>Categoria</label><input id="fCat" list="cats" placeholder="Ex.: Moradia"></div>
+      <div><label>Tipo</label>
+        <select id="fType"><option value="out">Saída</option><option value="in">Entrada</option></select></div>
+      <div><label>Valor (R$)</label><input id="fValue" inputmode="decimal" placeholder="0,00" required></div>
+      <div><label>Situação</label>
+        <select id="fStatus"><option value="done">Pago/Recebido</option><option value="pending">Pendente</option></select></div>
+      <div class="tools">
+        <button class="primary" type="submit" id="fSubmit">Adicionar</button>
+        <button type="button" id="fCancel" hidden>Cancelar</button>
+      </div>
+      <div class="full" style="grid-column:1/-1">
+        <label style="display:inline-flex;gap:6px;align-items:center;width:auto">
+          <input type="checkbox" id="fRepeat" style="width:auto"> Repetir mensalmente por
+        </label>
+        <input type="number" id="fRepeatN" min="2" max="60" value="12" style="width:70px"> meses
+        <span class="muted">(meses futuros entram como pendentes)</span>
+      </div>
+    </form>
+    <datalist id="cats"></datalist>
+  </div>
+
+  <div class="card">
+    <div class="tools" style="justify-content:space-between;margin-bottom:10px">
+      <h2 style="margin:0">Lançamentos do mês</h2>
+      <div class="filters" style="margin:0">
+        <input id="search" placeholder="Buscar…">
+        <select id="filterType"><option value="">Todos</option><option value="in">Entradas</option><option value="out">Saídas</option></select>
+        <select id="filterStatus"><option value="">Qualquer situação</option><option value="done">Realizados</option><option value="pending">Pendentes</option></select>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Situação</th><th class="num">Valor</th><th class="num">Saldo</th><th></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <p class="muted" id="empty" hidden>Nenhum lançamento neste mês.</p>
+  </div>
+
+  <div class="grid2">
+    <div class="card"><h2>Saídas por categoria</h2><div id="catOut"></div></div>
+    <div class="card"><h2>Entradas por categoria</h2><div id="catIn"></div></div>
+  </div>
+
+  <div class="card">
+    <h2>Últimos 12 meses</h2>
+    <canvas id="chart"></canvas>
+    <div class="legend">
+      <span><i style="background:var(--in)"></i>Entradas</span>
+      <span><i style="background:var(--out)"></i>Saídas</span>
+      <span><i style="background:var(--accent)"></i>Saldo no fim do mês</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Configurações e dados</h2>
+    <div class="tools">
+      <label class="muted">Saldo inicial da conta (R$)</label>
+      <input id="openingBalance" inputmode="decimal" style="width:140px">
+      <label class="muted">a partir de</label>
+      <input type="date" id="openingDate" style="width:auto">
+    </div>
+    <div class="tools" style="margin-top:12px">
+      <button id="exportCsv">Exportar CSV</button>
+      <button id="exportJson">Backup (JSON)</button>
+      <button id="importBtn">Importar backup / CSV</button>
+      <input type="file" id="importFile" accept=".json,.csv" hidden>
+      <button id="clearAll" class="link">Apagar tudo</button>
+    </div>
+    <p class="muted">Os dados ficam salvos só neste navegador. Faça backup de vez em quando.</p>
+  </div>
+</div>
+
+<script>
+const KEY = 'fluxo-de-caixa-v1';
+const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+const fmt = v => brl.format(v);
+const $ = id => document.getElementById(id);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+let state = load();
+let cursor = (() => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() }; })();
+let editingId = null;
+
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem(KEY));
+    if (s && Array.isArray(s.entries)) return s;
+  } catch (e) {}
+  return { opening: 0, openingDate: '', entries: [] };
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+
+function parseMoney(s) {
+  s = String(s).trim().replace(/[R$\s]/g, '');
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  const n = parseFloat(s);
+  return isNaN(n) ? NaN : Math.round(n * 100) / 100;
+}
+const ym = (y, m) => `${y}-${String(m + 1).padStart(2, '0')}`;
+const signed = e => e.type === 'in' ? e.value : -e.value;
+const todayISO = () => { const d = new Date(); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
+const fmtDate = iso => iso.split('-').reverse().join('/');
+const sorted = () => [...state.entries].sort((a, b) => a.date.localeCompare(b.date) || a.created - b.created);
+const counts = e => !state.openingDate || e.date >= state.openingDate;
+
+function balanceBefore(prefix, onlyDone) {
+  return state.opening + state.entries
+    .filter(e => counts(e) && e.date.slice(0, 7) < prefix && (!onlyDone || e.status === 'done'))
+    .reduce((s, e) => s + signed(e), 0);
+}
+
+function render() {
+  const prefix = ym(cursor.y, cursor.m);
+  { const l = new Date(cursor.y, cursor.m, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }); $('monthLabel').textContent = l[0].toUpperCase() + l.slice(1); }
+
+  const month = sorted().filter(e => e.date.startsWith(prefix));
+  const sum = (arr, t, st) => arr.filter(e => e.type === t && (!st || e.status === st)).reduce((s, e) => s + e.value, 0);
+  const openReal = balanceBefore(prefix, true);
+  const openAll = balanceBefore(prefix, false);
+  const inDone = sum(month, 'in', 'done'), outDone = sum(month, 'out', 'done');
+  const inPend = sum(month, 'in', 'pending'), outPend = sum(month, 'out', 'pending');
+
+  $('kOpen').textContent = fmt(openReal);
+  $('kIn').textContent = fmt(inDone);
+  $('kInPend').textContent = inPend ? `+ ${fmt(inPend)} a receber` : 'nada pendente';
+  $('kOut').textContent = fmt(outDone);
+  $('kOutPend').textContent = outPend ? `+ ${fmt(outPend)} a pagar` : 'nada pendente';
+  const real = openReal + inDone - outDone;
+  const forecast = openAll + inDone + inPend - outDone - outPend;
+  $('kReal').textContent = fmt(real); $('kReal').className = real < 0 ? 'neg' : '';
+  $('kForecast').textContent = fmt(forecast); $('kForecast').className = forecast < 0 ? 'neg' : '';
+
+  // Tabela com saldo acumulado (previsto)
+  const q = $('search').value.trim().toLowerCase();
+  const ft = $('filterType').value, fs = $('filterStatus').value;
+  let run = openAll;
+  const html = [];
+  for (const e of month) {
+    run += signed(e);
+    if (ft && e.type !== ft) continue;
+    if (fs && e.status !== fs) continue;
+    if (q && !(e.desc + ' ' + e.cat).toLowerCase().includes(q)) continue;
+    html.push(`<tr class="${e.status === 'pending' ? 'pending' : ''}">
+      <td>${fmtDate(e.date)}</td>
+      <td class="desc">${esc(e.desc)}</td>
+      <td>${esc(e.cat || '—')}</td>
+      <td><span class="tag ${e.status === 'pending' ? 'pend' : 'ok'}" data-toggle="${e.id}" title="Clique para alternar">${e.status === 'pending' ? 'Pendente' : (e.type === 'in' ? 'Recebido' : 'Pago')}</span></td>
+      <td class="num"><span class="tag ${e.type}">${e.type === 'in' ? '+' : '−'} ${fmt(e.value)}</span></td>
+      <td class="num ${run < 0 ? 'neg' : ''}">${fmt(run)}</td>
+      <td class="num"><button class="link" data-edit="${e.id}">Editar</button><button class="link" data-del="${e.id}">Excluir</button></td>
+    </tr>`);
+  }
+  $('rows').innerHTML = html.join('');
+  $('empty').hidden = html.length > 0;
+
+  renderCats('catOut', month.filter(e => e.type === 'out'), 'var(--out)');
+  renderCats('catIn', month.filter(e => e.type === 'in'), 'var(--in)');
+
+  const cats = [...new Set(state.entries.map(e => e.cat).filter(Boolean))].sort();
+  $('cats').innerHTML = cats.map(c => `<option value="${esc(c)}">`).join('');
+  $('openingBalance').value = state.opening.toFixed(2).replace('.', ',');
+  $('openingDate').value = state.openingDate || '';
+
+  drawChart();
+}
+
+function renderCats(el, list, color) {
+  const by = {};
+  list.forEach(e => { const k = e.cat || 'Sem categoria'; by[k] = (by[k] || 0) + e.value; });
+  const arr = Object.entries(by).sort((a, b) => b[1] - a[1]);
+  const total = arr.reduce((s, [, v]) => s + v, 0);
+  $(el).innerHTML = arr.length ? arr.map(([k, v]) => `
+    <div class="bar-row"><span>${esc(k)}</span>
+    <div class="bar"><i style="width:${(v / total * 100).toFixed(1)}%;background:${color}"></i></div>
+    <span style="text-align:right">${fmt(v)}</span></div>`).join('')
+    : '<p class="muted">Sem lançamentos.</p>';
+}
+
+function drawChart() {
+  const c = $('chart'), dpr = window.devicePixelRatio || 1;
+  const W = c.clientWidth, H = c.clientHeight;
+  c.width = W * dpr; c.height = H * dpr;
+  const ctx = c.getContext('2d'); ctx.scale(dpr, dpr); ctx.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const col = n => css.getPropertyValue(n).trim();
+
+  const months = [];
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(cursor.y, cursor.m - i, 1);
+    const p = ym(d.getFullYear(), d.getMonth());
+    const es = state.entries.filter(e => e.date.startsWith(p) && counts(e));
+    const inv = es.filter(e => e.type === 'in').reduce((s, e) => s + e.value, 0);
+    const outv = es.filter(e => e.type === 'out').reduce((s, e) => s + e.value, 0);
+    months.push({ label: d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', ''), inv, outv, bal: balanceBefore(p, false) + inv - outv });
+  }
+  const vals = months.flatMap(m => [m.inv, m.outv, m.bal, 0]);
+  let max = Math.max(...vals), min = Math.min(...vals);
+  if (max === min) max = min + 1;
+  const pad = { l: 70, r: 10, t: 10, b: 24 };
+  const ph = H - pad.t - pad.b, pw = W - pad.l - pad.r;
+  const y = v => pad.t + (max - v) / (max - min) * ph;
+
+  ctx.font = '11px system-ui'; ctx.fillStyle = col('--muted'); ctx.strokeStyle = col('--border'); ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const v = min + (max - min) * i / 4, yy = y(v);
+    ctx.beginPath(); ctx.moveTo(pad.l, yy); ctx.lineTo(W - pad.r, yy); ctx.stroke();
+    ctx.textAlign = 'right'; ctx.fillText(brl.format(Math.round(v)).replace(/,00$/, ''), pad.l - 6, yy + 4);
+  }
+  const step = pw / months.length, bw = Math.max(3, Math.min(14, step / 3.5));
+  months.forEach((m, i) => {
+    const cx = pad.l + step * i + step / 2;
+    ctx.fillStyle = col('--in'); ctx.fillRect(cx - bw - 1, y(m.inv), bw, y(0) - y(m.inv));
+    ctx.fillStyle = col('--out'); ctx.fillRect(cx + 1, y(m.outv), bw, y(0) - y(m.outv));
+    ctx.fillStyle = col('--muted'); ctx.textAlign = 'center'; ctx.fillText(m.label, cx, H - 6);
+  });
+  ctx.strokeStyle = col('--accent'); ctx.lineWidth = 2; ctx.beginPath();
+  months.forEach((m, i) => { const cx = pad.l + step * i + step / 2; i ? ctx.lineTo(cx, y(m.bal)) : ctx.moveTo(cx, y(m.bal)); });
+  ctx.stroke();
+  ctx.fillStyle = col('--accent');
+  months.forEach((m, i) => { ctx.beginPath(); ctx.arc(pad.l + step * i + step / 2, y(m.bal), 3, 0, 7); ctx.fill(); });
+}
+
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+function addMonths(iso, n) {
+  const [Y, M, D] = iso.split('-').map(Number);
+  const last = new Date(Y, M - 1 + n + 1, 0).getDate();
+  const d = new Date(Y, M - 1 + n, Math.min(D, last));
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function resetForm() {
+  editingId = null;
+  $('form').reset();
+  $('fDate').value = todayISO().slice(0, 7) === ym(cursor.y, cursor.m) ? todayISO() : ym(cursor.y, cursor.m) + '-01';
+  $('formTitle').textContent = 'Novo lançamento';
+  $('fSubmit').textContent = 'Adicionar';
+  $('fCancel').hidden = true;
+  $('fRepeat').parentElement.parentElement.hidden = false;
+}
+
+$('form').addEventListener('submit', ev => {
+  ev.preventDefault();
+  const value = parseMoney($('fValue').value);
+  if (!(value > 0)) { alert('Informe um valor maior que zero.'); return; }
+  const base = { date: $('fDate').value, desc: $('fDesc').value.trim(), cat: $('fCat').value.trim(), type: $('fType').value, value, status: $('fStatus').value };
+  if (editingId) {
+    Object.assign(state.entries.find(e => e.id === editingId), base);
+  } else {
+    const n = $('fRepeat').checked ? Math.min(60, Math.max(2, +$('fRepeatN').value || 2)) : 1;
+    const group = n > 1 ? uid() : undefined;
+    for (let i = 0; i < n; i++) {
+      state.entries.push({ ...base, id: uid(), created: Date.now() + i, group,
+        date: addMonths(base.date, i), status: i === 0 ? base.status : 'pending',
+        desc: n > 1 ? `${base.desc} (${i + 1}/${n})` : base.desc });
+    }
+  }
+  save(); resetForm(); render();
+});
+$('fCancel').onclick = () => resetForm();
+
+$('rows').addEventListener('click', ev => {
+  const t = ev.target;
+  if (t.dataset.del) {
+    const e = state.entries.find(x => x.id === t.dataset.del);
+    if (!e) return;
+    if (e.group && state.entries.filter(x => x.group === e.group).length > 1 &&
+        confirm('Este lançamento se repete. Excluir também as próximas parcelas pendentes?\n\nOK = esta e as próximas pendentes · Cancelar = só esta')) {
+      state.entries = state.entries.filter(x => x.id !== e.id && !(x.group === e.group && x.date > e.date && x.status === 'pending'));
+    } else if (!confirm(`Excluir "${e.desc}"?`)) return;
+    else state.entries = state.entries.filter(x => x.id !== e.id);
+    save(); render();
+  } else if (t.dataset.toggle) {
+    const e = state.entries.find(x => x.id === t.dataset.toggle);
+    e.status = e.status === 'pending' ? 'done' : 'pending';
+    save(); render();
+  } else if (t.dataset.edit) {
+    const e = state.entries.find(x => x.id === t.dataset.edit);
+    editingId = e.id;
+    $('fDate').value = e.date; $('fDesc').value = e.desc; $('fCat').value = e.cat;
+    $('fType').value = e.type; $('fValue').value = e.value.toFixed(2).replace('.', ','); $('fStatus').value = e.status;
+    $('formTitle').textContent = 'Editar lançamento'; $('fSubmit').textContent = 'Salvar';
+    $('fCancel').hidden = false; $('fRepeat').parentElement.parentElement.hidden = true;
+    $('form').scrollIntoView({ behavior: 'smooth' });
+  }
+});
+
+function move(n) { const d = new Date(cursor.y, cursor.m + n, 1); cursor = { y: d.getFullYear(), m: d.getMonth() }; if (!editingId) resetForm(); render(); }
+$('prev').onclick = () => move(-1);
+$('next').onclick = () => move(1);
+$('today').onclick = () => { const d = new Date(); cursor = { y: d.getFullYear(), m: d.getMonth() }; resetForm(); render(); };
+['search', 'filterType', 'filterStatus'].forEach(id => $(id).addEventListener('input', render));
+$('openingBalance').addEventListener('change', () => {
+  const v = parseMoney($('openingBalance').value);
+  state.opening = isNaN(v) ? 0 : v; save(); render();
+});
+$('openingDate').addEventListener('change', () => { state.openingDate = $('openingDate').value; save(); render(); });
+
+function download(name, text, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+$('exportJson').onclick = () => download(`fluxo-de-caixa-${todayISO()}.json`, JSON.stringify(state, null, 2), 'application/json');
+$('exportCsv').onclick = () => {
+  const q = s => `"${String(s).replace(/"/g, '""')}"`;
+  const lines = ['Data;Descrição;Categoria;Tipo;Valor;Situação'];
+  sorted().forEach(e => lines.push([fmtDate(e.date), q(e.desc), q(e.cat), e.type === 'in' ? 'Entrada' : 'Saída',
+    e.value.toFixed(2).replace('.', ','), e.status === 'done' ? 'Realizado' : 'Pendente'].join(';')));
+  download(`fluxo-de-caixa-${todayISO()}.csv`, '﻿' + lines.join('\r\n'), 'text/csv');
+};
+$('importBtn').onclick = () => $('importFile').click();
+$('importFile').onchange = async ev => {
+  const f = ev.target.files[0]; if (!f) return;
+  const text = (await f.text()).replace(/^﻿/, '');
+  try {
+    if (f.name.endsWith('.json')) {
+      const s = JSON.parse(text);
+      if (!Array.isArray(s.entries)) throw new Error('arquivo inválido');
+      if (!confirm('Substituir todos os dados atuais por este backup?')) return;
+      state = { opening: +s.opening || 0, openingDate: s.openingDate || '', entries: s.entries };
+    } else {
+      const rows = text.split(/\r?\n/).filter(Boolean).slice(1);
+      let n = 0;
+      for (const r of rows) {
+        const c = r.match(/("([^"]|"")*"|[^;]*)(;|$)/g).map(x => x.replace(/;$/, '').replace(/^"|"$/g, '').replace(/""/g, '"'));
+        const [d, desc, cat, tipo, val, sit] = c;
+        const [D, M, Y] = (d || '').split('/');
+        const value = parseMoney(val);
+        if (!Y || !(value > 0)) continue;
+        state.entries.push({ id: uid(), created: Date.now() + n++, date: `${Y}-${M.padStart(2, '0')}-${D.padStart(2, '0')}`,
+          desc, cat, type: /entrada/i.test(tipo) ? 'in' : 'out', value, status: /pend/i.test(sit) ? 'pending' : 'done' });
+      }
+      alert(`${n} lançamento(s) importado(s).`);
+    }
+    save(); render();
+  } catch (e) { alert('Não foi possível importar: ' + e.message); }
+  ev.target.value = '';
+};
+$('clearAll').onclick = () => {
+  if (confirm('Apagar TODOS os lançamentos? Essa ação não pode ser desfeita.')) { state = { opening: 0, openingDate: '', entries: [] }; save(); resetForm(); render(); }
+};
+window.addEventListener('resize', drawChart);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', drawChart);
+
+resetForm();
+render();
+</script>
+</body>
+</html>
